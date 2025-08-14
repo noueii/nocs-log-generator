@@ -4,8 +4,10 @@ import {
   History, 
   Settings, 
   Target,
-  BarChart3
+  BarChart3,
+  Home
 } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
 import {
   Sidebar,
   SidebarContent,
@@ -23,46 +25,52 @@ import {
 // Menu items
 const menuItems = [
   {
+    title: "Home",
+    url: "/",
+    icon: Home,
+    description: "Dashboard and overview"
+  },
+  {
     title: "Generate Match",
-    url: "#generate",
+    url: "/generate",
     icon: Play,
     description: "Create synthetic CS2 match logs"
   },
   {
-    title: "Parse Demo",
-    url: "#parse", 
-    icon: FileVideo,
-    description: "Convert demo files to logs"
-  },
-  {
     title: "Match History",
-    url: "#history",
+    url: "/history",
     icon: History,
     description: "View generated matches"
+  },
+  {
+    title: "Parse Demo",
+    url: "/parse", 
+    icon: FileVideo,
+    description: "Convert demo files to logs (coming soon)"
   },
 ]
 
 const toolItems = [
   {
     title: "Statistics",
-    url: "#stats",
+    url: "/stats",
     icon: BarChart3,
-    description: "View match statistics"
+    description: "View match statistics (coming soon)"
   },
   {
     title: "CS2 Events",
-    url: "#events",
+    url: "/events",
     icon: Target,
-    description: "Event type reference"
+    description: "Event type reference (coming soon)"
   },
 ]
 
 const settingsItems = [
   {
     title: "Settings",
-    url: "#settings",
+    url: "/settings",
     icon: Settings,
-    description: "Application settings"
+    description: "Application settings (coming soon)"
   },
 ]
 
@@ -71,6 +79,8 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ className }: AppSidebarProps) {
+  const location = useLocation();
+  
   return (
     <Sidebar variant="inset" className={className}>
       <SidebarHeader>
@@ -90,11 +100,11 @@ export function AppSidebar({ className }: AppSidebarProps) {
             <SidebarMenu>
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild tooltip={item.description}>
-                    <a href={item.url} className="flex items-center gap-2">
+                  <SidebarMenuButton asChild tooltip={item.description} isActive={location.pathname === item.url}>
+                    <Link to={item.url} className="flex items-center gap-2">
                       <item.icon className="size-4" />
                       <span>{item.title}</span>
-                    </a>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -111,11 +121,11 @@ export function AppSidebar({ className }: AppSidebarProps) {
             <SidebarMenu>
               {toolItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild tooltip={item.description}>
-                    <a href={item.url} className="flex items-center gap-2">
+                  <SidebarMenuButton asChild tooltip={item.description} isActive={location.pathname === item.url}>
+                    <Link to={item.url} className="flex items-center gap-2 opacity-50 pointer-events-none">
                       <item.icon className="size-4" />
                       <span>{item.title}</span>
-                    </a>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -132,11 +142,11 @@ export function AppSidebar({ className }: AppSidebarProps) {
             <SidebarMenu>
               {settingsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild tooltip={item.description}>
-                    <a href={item.url} className="flex items-center gap-2">
+                  <SidebarMenuButton asChild tooltip={item.description} isActive={location.pathname === item.url}>
+                    <Link to={item.url} className="flex items-center gap-2 opacity-50 pointer-events-none">
                       <item.icon className="size-4" />
                       <span>{item.title}</span>
-                    </a>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

@@ -1,10 +1,12 @@
 import { MainLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Toaster } from 'sonner'
 
 function App() {
   return (
-    <MainLayout>
+    <>
+      <MainLayout>
       {/* Welcome Section */}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Welcome to CS2 Log Generator</h1>
@@ -117,6 +119,13 @@ function App() {
         </CardContent>
       </Card>
     </MainLayout>
+    <Toaster 
+      position="top-right"
+      theme="dark"
+      richColors
+      closeButton
+    />
+    </>
   )
 }
 

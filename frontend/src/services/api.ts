@@ -42,9 +42,9 @@ interface IApiConfig {
  */
 const defaultConfig: IApiConfig = {
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080',
-  timeout: 30000, // 30 seconds
-  retries: 3,
-  retryDelay: 1000, // 1 second
+  timeout: parseInt(import.meta.env.VITE_API_TIMEOUT) || 30000,
+  retries: parseInt(import.meta.env.VITE_API_RETRY_ATTEMPTS) || 3,
+  retryDelay: parseInt(import.meta.env.VITE_API_RETRY_DELAY) || 1000,
 };
 
 /**
@@ -74,8 +74,8 @@ const createApiClient = (config: IApiConfig): AxiosInstance => {
         requestConfig.headers['X-Request-Timestamp'] = timestamp;
       }
 
-      // Log request in development
-      if (import.meta.env.DEV) {
+      // Log request in development or when debug logging is enabled
+      if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEBUG_LOGS === 'true') {
         console.log(`🚀 API Request [${requestId}]:`, {
           method: requestConfig.method?.toUpperCase(),
           url: requestConfig.url,
@@ -98,8 +98,8 @@ const createApiClient = (config: IApiConfig): AxiosInstance => {
     (response: AxiosResponse) => {
       const requestId = response.config.headers?.['X-Request-ID'];
       
-      // Log response in development
-      if (import.meta.env.DEV) {
+      // Log response in development or when debug logging is enabled
+      if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEBUG_LOGS === 'true') {
         console.log(`✅ API Response [${requestId}]:`, {
           status: response.status,
           statusText: response.statusText,
@@ -128,8 +128,8 @@ const createApiClient = (config: IApiConfig): AxiosInstance => {
     async (error: AxiosError) => {
       const requestId = error.config?.headers?.['X-Request-ID'];
       
-      // Log error in development
-      if (import.meta.env.DEV) {
+      // Log error in development or when debug logging is enabled
+      if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEBUG_LOGS === 'true') {
         console.error(`❌ API Error [${requestId}]:`, {
           message: error.message,
           status: error.response?.status,
@@ -246,7 +246,7 @@ const retryRequest = async (
   const retryCount = ((error.config as any)?._retryCount || 0) + 1;
   const delay = config.retryDelay * Math.pow(2, retryCount - 1); // Exponential backoff
   
-  if (import.meta.env.DEV) {
+  if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEBUG_LOGS === 'true') {
     console.log(`🔄 Retrying request (attempt ${retryCount}/${config.retries}) in ${delay}ms`);
   }
 
@@ -365,6 +365,101 @@ export const put = async <T>(url: string, data?: any): Promise<T> => {
  */
 export const del = async <T>(url: string): Promise<T> => {
   return handleApiCall<T>(() => apiClient.delete(url));
+};
+
+/**
+ * Toast notification interface (to be implemented by the app)
+ */
+export interface IToastNotification {
+  showToast: (message: string, type: 'success' | 'error' | 'info') => void;
+}
+
+/**
+ * Global toast notification handler (set by the app)
+ */
+let toastHandler: IToastNotification | null = null;
+
+/**
+ * Set global toast handler
+ */
+export const setToastHandler = (handler: IToastNotification) => {
+  toastHandler = handler;
+};
+
+/**
+ * Show error toast if handler is set
+ */
+const showErrorToast = (message: string) => {
+  if (toastHandler) {
+    toastHandler.showToast(message, 'error');
+  }
+};
+
+/**
+ * Show success toast if handler is set
+ */
+const showSuccessToast = (message: string) => {
+  if (toastHandler) {
+    toastHandler.showToast(message, 'success');
+  }
+};
+
+/**
+ * Offline detection
+ */
+export const isOnline = () => navigator.onLine;
+
+/**
+ * Network status event listener
+ */
+let networkStatusListeners: Array<(online: boolean) => void> = [];
+
+window.addEventListener('online', () => {
+  networkStatusListeners.forEach(listener => listener(true));
+});
+
+window.addEventListener('offline', () => {
+  networkStatusListeners.forEach(listener => listener(false));
+});
+
+/**
+ * Add network status listener
+ */
+export const addNetworkStatusListener = (listener: (online: boolean) => void) => {
+  networkStatusListeners.push(listener);
+  return () => {
+    networkStatusListeners = networkStatusListeners.filter(l => l !== listener);
+  };
+};
+
+/**
+ * Create API call with offline handling
+ */
+export const apiCallWithOfflineHandling = async <T>(
+  apiCall: () => Promise<T>,
+  fallback?: () => Promise<T>
+): Promise<T> => {
+  try {
+    // Check if offline mode is enabled and we're offline
+    if (import.meta.env.VITE_ENABLE_OFFLINE_MODE === 'true' && !isOnline()) {
+      if (fallback) {
+        console.log('📱 Using offline fallback');
+        return await fallback();
+      }
+      throw new Error('Network unavailable and no offline fallback provided');
+    }
+    
+    return await apiCall();
+  } catch (error) {
+    // If network error and offline mode enabled, try fallback
+    if (import.meta.env.VITE_ENABLE_OFFLINE_MODE === 'true' && 
+        (error as any)?.code === 'ERR_NETWORK' && fallback) {
+      console.log('📱 Network error, using offline fallback');
+      return await fallback();
+    }
+    
+    throw error;
+  }
 };
 
 /**

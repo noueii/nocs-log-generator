@@ -3,7 +3,7 @@
  * Handles all match-related API operations with proper error handling and TypeScript types
  */
 
-import { get, post } from './api';
+import { get, post, apiCallWithOfflineHandling } from './api';
 import type { 
   IMatch, 
   IGenerateRequest, 
@@ -102,45 +102,36 @@ class MatchService {
    * Generate a new match
    */
   async generateMatch(request: IGenerateRequest): Promise<IGenerateResponse> {
-    try {
-      const response = await post<IGenerateResponse>('/api/v1/generate', request);
-      return response;
-    } catch (error) {
-      console.error('Failed to generate match:', error);
-      throw error;
-    }
+    return apiCallWithOfflineHandling(
+      () => post<IGenerateResponse>('/api/v1/generate', request),
+      () => this.generateMatchOffline(request)
+    );
   }
 
   /**
    * Get match by ID
    */
   async getMatch(matchId: string): Promise<IMatch> {
-    try {
-      const response = await get<IMatch>(`/api/v1/matches/${matchId}`);
-      return response;
-    } catch (error) {
-      console.error(`Failed to get match ${matchId}:`, error);
-      throw error;
-    }
+    return apiCallWithOfflineHandling(
+      () => get<IMatch>(`/api/v1/matches/${matchId}`),
+      () => this.getMatchOffline(matchId)
+    );
   }
 
   /**
    * Get list of matches with pagination and filtering
    */
   async getMatches(params: IMatchSearchParams = {}): Promise<IMatchListResponse> {
-    try {
-      const searchParams = {
-        page: params.page || 1,
-        pageSize: params.pageSize || 20,
-        ...params,
-      };
-      
-      const response = await get<IMatchListResponse>('/api/v1/matches', searchParams);
-      return response;
-    } catch (error) {
-      console.error('Failed to get matches:', error);
-      throw error;
-    }
+    const searchParams = {
+      page: params.page || 1,
+      pageSize: params.pageSize || 20,
+      ...params,
+    };
+    
+    return apiCallWithOfflineHandling(
+      () => get<IMatchListResponse>('/api/v1/matches', searchParams),
+      () => this.getMatchesOffline(params)
+    );
   }
 
   /**
@@ -173,43 +164,68 @@ class MatchService {
    * Get match templates
    */
   async getMatchTemplates(): Promise<IMatchTemplate[]> {
-    try {
-      const response = await get<IMatchTemplate[]>('/api/v1/templates');
-      return response;
-    } catch (error) {
-      console.error('Failed to get match templates:', error);
-      
-      // Return default templates as fallback
-      return this.getDefaultTemplates();
-    }
+    return apiCallWithOfflineHandling(
+      async () => {
+        const response = await get<{templates: Record<string, any>}>('/api/v1/config/templates');
+        // Transform backend response to frontend format
+        return Object.entries(response.templates).map(([id, config]) => ({
+          id,
+          name: id.charAt(0).toUpperCase() + id.slice(1),
+          description: `${id.charAt(0).toUpperCase() + id.slice(1)} match template`,
+          config,
+          teams: [] // Empty teams, filled by user
+        }));
+      },
+      () => Promise.resolve(this.getDefaultTemplates())
+    );
   }
 
   /**
    * Get available maps
    */
   async getMaps(): Promise<IMapInfo[]> {
-    try {
-      const response = await get<IMapInfo[]>('/api/v1/maps');
-      return response;
-    } catch (error) {
-      console.error('Failed to get maps:', error);
-      
-      // Return default map list as fallback
-      return this.getDefaultMaps();
-    }
+    return apiCallWithOfflineHandling(
+      async () => {
+        const response = await get<{maps: Array<{name: string, display_name: string, type: string}>}>('/api/v1/config/maps');
+        return response.maps.map(map => ({
+          name: map.name as TMapName,
+          display_name: map.display_name,
+          bomb_sites: ['A', 'B'],
+          spawn_points: {
+            ct: 5,
+            t: 5
+          }
+        }));
+      },
+      () => Promise.resolve(this.getDefaultMaps())
+    );
   }
 
   /**
    * Get server status
    */
   async getServerStatus(): Promise<IServerStatus> {
-    try {
-      const response = await get<IServerStatus>('/api/v1/status');
-      return response;
-    } catch (error) {
-      console.error('Failed to get server status:', error);
-      throw error;
-    }
+    return apiCallWithOfflineHandling(
+      async () => {
+        const response = await get<{status: string, checks: any}>('/ready');
+        return {
+          status: response.status === 'ready' ? 'healthy' : 'unhealthy',
+          version: '0.1.0',
+          uptime: 0,
+          active_matches: 0,
+          queue_length: 0,
+          last_updated: new Date().toISOString()
+        };
+      },
+      async () => ({
+        status: 'unhealthy' as const,
+        version: '0.1.0',
+        uptime: 0,
+        active_matches: 0,
+        queue_length: 0,
+        last_updated: new Date().toISOString()
+      })
+    );
   }
 
   /**
@@ -262,6 +278,43 @@ class MatchService {
   }
 
   // Private helper methods
+
+  /**
+   * Generate match offline (fallback)
+   */
+  private async generateMatchOffline(request: IGenerateRequest): Promise<IGenerateResponse> {
+    // Create mock response for offline mode
+    const matchId = `offline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Simulate processing delay
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    return {
+      match_id: matchId,
+      status: 'completed',
+      log_url: '',
+      message: 'Generated in offline mode - no actual log file available'
+    };
+  }
+
+  /**
+   * Get match offline (fallback)
+   */
+  private async getMatchOffline(matchId: string): Promise<IMatch> {
+    throw new Error(`Cannot retrieve match ${matchId} - offline mode`);
+  }
+
+  /**
+   * Get matches offline (fallback)
+   */
+  private async getMatchesOffline(params: IMatchSearchParams): Promise<IMatchListResponse> {
+    return {
+      matches: [],
+      total: 0,
+      page: params.page || 1,
+      pageSize: params.pageSize || 20
+    };
+  }
 
   /**
    * Get default templates (fallback)

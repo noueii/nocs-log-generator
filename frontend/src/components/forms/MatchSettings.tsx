@@ -19,12 +19,12 @@ import {
   TabsTrigger,
   TabsContent
 } from "@/components/ui"
+import { useMatchConfig } from "@/store"
 import type { IMatchConfig, TMapName, TMatchFormat } from "@/types"
 import { MAPS } from "@/types"
 
 interface MatchSettingsProps {
-  config: IMatchConfig
-  onConfigUpdate: (config: IMatchConfig) => void
+  config?: IMatchConfig
   className?: string
 }
 
@@ -55,15 +55,17 @@ const mapDescriptions: Record<TMapName, string> = {
 }
 
 export function MatchSettings({
-  config,
-  onConfigUpdate,
+  config: propConfig,
   className
 }: MatchSettingsProps) {
-  const [selectedMap, setSelectedMap] = useState<TMapName>(config.map as TMapName)
+  const { config, setConfig } = useMatchConfig()
+  
+  // Use prop config if provided, otherwise use store config
+  const activeConfig = propConfig || config
+  const [selectedMap, setSelectedMap] = useState<TMapName>(activeConfig.map as TMapName)
 
   const handleConfigChange = (field: keyof IMatchConfig, value: any) => {
-    const newConfig = { ...config, [field]: value }
-    onConfigUpdate(newConfig)
+    setConfig({ [field]: value })
   }
 
   const handleMapSelect = (map: TMapName) => {
@@ -129,7 +131,7 @@ export function MatchSettings({
                 <div className="space-y-2">
                   <Label>Format</Label>
                   <Select
-                    value={config.format}
+                    value={activeConfig.format}
                     onValueChange={(value: TMatchFormat) => handleConfigChange('format', value)}
                   >
                     <SelectTrigger>
@@ -159,7 +161,7 @@ export function MatchSettings({
                 <div className="space-y-2">
                   <Label>Overtime</Label>
                   <Select
-                    value={config.overtime ? "yes" : "no"}
+                    value={activeConfig.overtime ? "yes" : "no"}
                     onValueChange={(value) => handleConfigChange('overtime', value === "yes")}
                   >
                     <SelectTrigger>
@@ -176,7 +178,7 @@ export function MatchSettings({
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
                   <Clock className="size-3" />
-                  Tick Rate: {config.tick_rate} Hz
+                  Tick Rate: {activeConfig.tick_rate} Hz
                 </Label>
                 <Slider
                   value={[config.tick_rate]}

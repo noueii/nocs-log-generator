@@ -1,8 +1,7 @@
 "use client"
 
-import { useForm } from "react-hook-form"
-import { useState } from "react"
-import { Users, Settings, Play, FileText } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Users, Settings, Play, FileText, Monitor } from "lucide-react"
 import { MainLayout } from "@/components/layout"
 import { 
   Tabs, 
@@ -18,237 +17,174 @@ import {
 } from "@/components/ui"
 import { TeamBuilder } from "@/components/forms/TeamBuilder"
 import { MatchSettings } from "@/components/forms/MatchSettings"
-import { generateMatch } from "@/services/matchService"
-import type { IMatchConfig, IGenerateResponse, TSide, TPlayerRole } from "@/types"
-import { DEFAULT_MATCH_CONFIG } from "@/types"
-
-// Use consistent form data types
-interface IPlayerFormData {
-  name: string
-  role: TPlayerRole
-  steam_id?: string
-  rating: number
-  country: string
-}
-
-interface ITeamFormData {
-  name: string
-  tag: string
-  country: string
-  players: IPlayerFormData[]
-}
-
-interface IMatchFormData {
-  config: IMatchConfig
-  teams: ITeamFormData[]
-}
+import { LogViewer } from "@/components/viewer/LogViewer"
+import { 
+  useAppStore, 
+  useGenerationStatus, 
+  useMatchConfig, 
+  useTeamsManagement 
+} from "@/store"
+import { useMatchStream } from "@/hooks/useWebSocket"
+import { useMatchStore } from "@/store/useMatchStore"
+import { setToastHandler } from "@/services/api"
+import type { ITeamFormData } from "@/types"
+import type { ISpecificGameEvent } from "@/types/events"
 
 export function GenerateMatch() {
-  const [activeTab, setActiveTab] = useState("teams")
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [generationResult, setGenerationResult] = useState<IGenerateResponse | null>(null)
-  const [teams, setTeams] = useState<ITeamFormData[]>([
-    {
-      name: "",
-      tag: "",
-      country: "US",
-      players: Array(5).fill(null).map((_, i) => ({
-        name: "",
-        role: (i === 0 ? "entry" : i === 1 ? "awp" : i === 2 ? "support" : i === 3 ? "lurker" : "igl") as TPlayerRole,
-        rating: 1.0,
-        steam_id: "",
-        country: "US"
-      }))
-    },
-    {
-      name: "",
-      tag: "",
-      country: "US", 
-      players: Array(5).fill(null).map((_, i) => ({
-        name: "",
-        role: (i === 0 ? "entry" : i === 1 ? "awp" : i === 2 ? "support" : i === 3 ? "lurker" : "igl") as TPlayerRole,
-        rating: 1.0,
-        steam_id: "",
-        country: "US"
-      }))
-    }
-  ])
+  // Local state for log viewer
+  const [isLogViewerFullscreen, setIsLogViewerFullscreen] = useState(false)
+  const [streamingLogs, setStreamingLogs] = useState<ISpecificGameEvent[]>([])
+  const [currentMatchId, setCurrentMatchId] = useState<string | null>(null)
+
+  // Use Zustand stores
+  const { 
+    activeTab, 
+    setActiveTab,
+    generateMatch,
+    canProceedToSettings,
+    canGenerate,
+    showToast
+  } = useAppStore()
   
-  const form = useForm<IMatchFormData>({
-    defaultValues: {
-      config: DEFAULT_MATCH_CONFIG,
-      teams: teams
+  const { saveGenerationResult } = useMatchStore()
+  
+  const { 
+    status, 
+    result: generationResult, 
+    error: generationError,
+    isGenerating 
+  } = useGenerationStatus()
+  
+  const { config } = useMatchConfig()
+  const { teams, updateTeam } = useTeamsManagement()
+
+  // WebSocket streaming for real-time logs
+  const {
+    events: wsEvents,
+    status: wsStatus,
+    isConnected: wsConnected,
+    connect: connectWebSocket,
+    disconnect: disconnectWebSocket,
+    pause: pauseStream,
+    resume: resumeStream,
+    clear: clearEvents,
+    isPaused
+  } = useMatchStream({
+    matchId: currentMatchId || undefined,
+    autoConnect: false,
+    onEvent: (event) => {
+      // Handle new events
+      setStreamingLogs(prev => [...prev, event])
+    },
+    onStatusChange: (status) => {
+      console.log('Stream status:', status)
+    },
+    onError: (error) => {
+      console.error('Stream error:', error)
+      showToast(`Streaming error: ${error}`, 'error')
     }
   })
 
   const handleTeamUpdate = (teamIndex: number, team: ITeamFormData) => {
-    const newTeams = [...teams]
-    newTeams[teamIndex] = team
-    setTeams(newTeams)
-    form.setValue('teams', newTeams)
-  }
-
-  const handleConfigUpdate = (config: IMatchConfig) => {
-    form.setValue('config', config)
-  }
-
-  const canProceedToSettings = () => {
-    return teams.every(team => 
-      team.name.trim() !== "" && 
-      team.players.every(player => player.name.trim() !== "")
-    )
-  }
-
-  const canGenerate = () => {
-    return canProceedToSettings() && form.getValues('config')
+    updateTeam(teamIndex, team)
   }
 
   const handleGenerate = async () => {
-    if (!canGenerate()) return
-
-    setIsGenerating(true)
-    setGenerationResult(null)
-
     try {
-      const formData = form.getValues()
+      // Clear previous logs and start streaming
+      setStreamingLogs([])
+      clearEvents()
       
-      // Create a simplified request that matches backend expectations
-      const generateRequest = {
-        teams: formData.teams.map((teamData, index) => ({
-          name: teamData.name,
-          tag: teamData.tag,
-          country: teamData.country,
-          side: (index === 0 ? "CT" : "TERRORIST") as TSide,
-          score: 0,
-          rounds_won: 0,
-          economy: {
-            total_money: formData.config.start_money * 5,
-            average_money: formData.config.start_money,
-            equipment_value: 0,
-            consecutive_losses: 0,
-            loss_bonus: 1400,
-            money_spent: 0,
-            money_earned: 0,
-            rifles: 0,
-            smgs: 0,
-            pistols: 5,
-            snipers: 0,
-            grenades: 0,
-            armor: 0,
-            helmets: 0,
-            defuse_kits: 0
-          },
-          stats: {
-            kills: 0,
-            deaths: 0,
-            assists: 0,
-            score: 0,
-            mvps: 0,
-            adr: 0,
-            first_kills: 0,
-            first_deaths: 0,
-            clutch_wins: 0,
-            total_damage: 0
-          },
-          players: teamData.players.map(playerData => ({
-            name: playerData.name,
-            steam_id: playerData.steam_id || `STEAM_1:0:${Math.floor(Math.random() * 1000000)}`,
-            role: playerData.role,
-            team: teamData.name,
-            side: (index === 0 ? "CT" : "TERRORIST") as TSide,
-            state: {
-              is_alive: true,
-              health: 100,
-              armor: 0,
-              has_helmet: false,
-              has_defuse_kit: false,
-              position: { x: 0, y: 0, z: 0 },
-              view_angle: { x: 0, y: 0, z: 0 },
-              velocity: { x: 0, y: 0, z: 0 },
-              grenades: [],
-              money: formData.config.start_money,
-              is_flashed: false,
-              is_smoked: false,
-              is_defusing: false,
-              is_planting: false,
-              is_reloading: false,
-              has_bomb: false,
-              is_last_alive: false
-            },
-            stats: {
-              kills: 0,
-              deaths: 0,
-              assists: 0,
-              score: 0,
-              mvps: 0,
-              adr: 0,
-              first_kills: 0,
-              first_deaths: 0,
-              clutch_wins: 0,
-              total_damage: 0,
-              headshot_kills: 0,
-              utility_damage: 0,
-              enemies_flashed: 0,
-              damage: 0,
-              headshots: 0,
-              headshot_rate: 0,
-              accuracy: 0,
-              trade_kills: 0,
-              entry_kills: 0,
-              '2k_rounds': 0,
-              '3k_rounds': 0,
-              '4k_rounds': 0,
-              '5k_rounds': 0,
-              bomb_plants: 0,
-              bomb_defuses: 0,
-              bomb_defuse_attempts: 0,
-              hostages_rescued: 0,
-              money_spent: 0,
-              grenades_thrown: {},
-              flash_assists: 0,
-              team_kills: 0,
-              team_damage: 0,
-              kd_ratio: 0,
-              rating: playerData.rating,
-              kast: 0
-            },
-            economy: {
-              money: formData.config.start_money,
-              money_spent: 0,
-              money_earned: formData.config.start_money,
-              equipment_value: 0,
-              purchases: [],
-              eco_rounds: 0,
-              force_buy_rounds: 0,
-              full_buy_rounds: 0,
-              economy_rating: 0
-            }
-          }))
-        })),
-        map: formData.config.map,
-        format: formData.config.format,
-        options: {
-          seed: formData.config.seed,
-          tick_rate: formData.config.tick_rate,
-          overtime: formData.config.overtime,
-          max_rounds: formData.config.max_rounds
-        }
-      } as any // Temporarily bypass strict typing for MVP
-
-      const result = await generateMatch(generateRequest)
-      setGenerationResult(result)
-      setActiveTab("results")
+      // Generate the match
+      await generateMatch()
+      
+      // If generation started successfully, connect WebSocket for real-time streaming
+      if (generationResult?.match_id) {
+        setCurrentMatchId(generationResult.match_id)
+        connectWebSocket()
+        
+        // Auto-switch to results tab to show streaming logs
+        setTimeout(() => {
+          setActiveTab("results")
+        }, 1000)
+      }
     } catch (error) {
-      console.error('Match generation failed:', error)
-      setGenerationResult({
-        match_id: "",
-        status: "error",
-        error: error instanceof Error ? error.message : "Unknown error occurred"
-      })
-    } finally {
-      setIsGenerating(false)
+      console.error('Generation failed:', error)
+      showToast('Failed to generate match', 'error')
     }
   }
+
+  // Update match ID when generation result changes
+  useEffect(() => {
+    if (generationResult?.match_id && generationResult.match_id !== currentMatchId) {
+      setCurrentMatchId(generationResult.match_id)
+      
+      // Connect to WebSocket for streaming if we're on results tab
+      if (activeTab === 'results') {
+        connectWebSocket()
+      }
+    }
+  }, [generationResult, currentMatchId, activeTab, connectWebSocket])
+
+  // Connect WebSocket when switching to results tab with a match ID
+  useEffect(() => {
+    if (activeTab === 'results' && currentMatchId && !wsConnected) {
+      connectWebSocket()
+    }
+  }, [activeTab, currentMatchId, wsConnected, connectWebSocket])
+
+  // Cleanup WebSocket on unmount
+  useEffect(() => {
+    return () => {
+      disconnectWebSocket()
+    }
+  }, [disconnectWebSocket])
+
+  const handleToggleLogViewerFullscreen = () => {
+    setIsLogViewerFullscreen(prev => !prev)
+  }
+
+  const handleDownloadLogs = () => {
+    if (streamingLogs.length === 0) {
+      showToast('No logs to download', 'error')
+      return
+    }
+
+    const logText = streamingLogs.map(event => 
+      `[${event.timestamp}] [TICK:${event.tick}] [R${event.round}] ${event.type}: ${JSON.stringify(event)}`
+    ).join('\n')
+    
+    const blob = new Blob([logText], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `cs2-match-${currentMatchId || 'logs'}-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    
+    showToast('Logs downloaded successfully', 'success')
+  }
+
+  // Set up toast handler for API client
+  useEffect(() => {
+    setToastHandler({ showToast });
+  }, [showToast]);
+  
+  // Save generation result to match store when completed
+  useEffect(() => {
+    if (generationResult && status === 'completed') {
+      saveGenerationResult(generationResult, {
+        teams,
+        map: config.map,
+        format: config.format
+      });
+    }
+  }, [generationResult, status, teams, config.map, config.format, saveGenerationResult]);
+
+  // Combine streaming events with any static events
+  const allEvents = [...streamingLogs, ...wsEvents]
 
   return (
     <MainLayout>
@@ -264,7 +200,7 @@ export function GenerateMatch() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-6">
+          <TabsList className="grid w-full grid-cols-5 mb-6">
             <TabsTrigger value="teams" className="flex items-center gap-2">
               <Users className="size-4" />
               Teams
@@ -292,6 +228,17 @@ export function GenerateMatch() {
             >
               <FileText className="size-4" />
               Results
+            </TabsTrigger>
+            <TabsTrigger 
+              value="logs"
+              disabled={!generationResult || allEvents.length === 0}
+              className="flex items-center gap-2"
+            >
+              <Monitor className="size-4" />
+              Live Logs
+              {wsConnected && (
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -326,8 +273,7 @@ export function GenerateMatch() {
 
           <TabsContent value="settings" className="space-y-6">
             <MatchSettings
-              config={form.getValues('config')}
-              onConfigUpdate={handleConfigUpdate}
+              config={config}
             />
             
             <div className="flex justify-between">
@@ -373,9 +319,9 @@ export function GenerateMatch() {
                   <div>
                     <h4 className="font-medium mb-2">Match Settings</h4>
                     <div className="space-y-1 text-sm">
-                      <div>Map: <span className="font-medium">{form.getValues('config.map')}</span></div>
-                      <div>Format: <span className="font-medium">{form.getValues('config.format').toUpperCase()}</span></div>
-                      <div>Overtime: <span className="font-medium">{form.getValues('config.overtime') ? "Yes" : "No"}</span></div>
+                      <div>Map: <span className="font-medium">{config.map}</span></div>
+                      <div>Format: <span className="font-medium">{config.format.toUpperCase()}</span></div>
+                      <div>Overtime: <span className="font-medium">{config.overtime ? "Yes" : "No"}</span></div>
                     </div>
                   </div>
                 </div>
@@ -423,13 +369,13 @@ export function GenerateMatch() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {generationResult.status === "error" ? (
+                  {status === "error" ? (
                     <div className="text-center py-6">
                       <div className="text-red-500 text-lg font-medium mb-2">
                         Generation Failed
                       </div>
                       <p className="text-muted-foreground mb-4">
-                        {generationResult.error || "An unknown error occurred"}
+                        {generationError || "An unknown error occurred"}
                       </p>
                       <Button
                         onClick={() => setActiveTab("generate")}
@@ -439,19 +385,63 @@ export function GenerateMatch() {
                       </Button>
                     </div>
                   ) : (
-                    <div className="text-center py-6">
-                      <div className="text-green-500 text-lg font-medium mb-2">
-                        Match Generated Successfully!
+                    <div className="space-y-4">
+                      <div className="text-center py-4">
+                        <div className="text-green-500 text-lg font-medium mb-2">
+                          Match Generated Successfully!
+                        </div>
+                        <p className="text-muted-foreground mb-2">
+                          Match ID: {generationResult?.match_id}
+                        </p>
+                        <div className="flex items-center justify-center gap-2 mb-4">
+                          <Badge variant={wsConnected ? "default" : "secondary"}>
+                            {wsConnected ? "🔴 Live" : "⚫ Offline"}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground">
+                            {allEvents.length} events
+                          </span>
+                        </div>
+                        <div className="flex gap-2 justify-center">
+                          {generationResult?.log_url && (
+                            <Button asChild variant="outline">
+                              <a href={generationResult.log_url} download>
+                                Download Original
+                              </a>
+                            </Button>
+                          )}
+                          <Button 
+                            onClick={handleDownloadLogs}
+                            disabled={allEvents.length === 0}
+                          >
+                            Download Logs ({allEvents.length})
+                          </Button>
+                        </div>
                       </div>
-                      <p className="text-muted-foreground mb-4">
-                        Match ID: {generationResult.match_id}
-                      </p>
-                      {generationResult.log_url && (
-                        <Button asChild>
-                          <a href={generationResult.log_url} download>
-                            Download Log File
-                          </a>
-                        </Button>
+                      
+                      {/* Quick log preview */}
+                      {allEvents.length > 0 && (
+                        <div className="border rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-medium">Recent Events</h4>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setActiveTab("logs")}
+                            >
+                              View All Logs
+                            </Button>
+                          </div>
+                          <div className="space-y-1 max-h-32 overflow-y-auto font-mono text-xs">
+                            {allEvents.slice(-5).map((event, index) => (
+                              <div key={index} className="text-gray-600">
+                                <span className="text-gray-500">[{event.timestamp}]</span>
+                                <span className="text-blue-400 ml-2">R{event.round}</span>
+                                <span className="text-gray-400 ml-2">{event.tick}</span>
+                                <span className="ml-2">{event.type}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}
@@ -464,10 +454,115 @@ export function GenerateMatch() {
                 variant="outline"
                 onClick={() => {
                   setActiveTab("teams")
-                  setGenerationResult(null)
+                  disconnectWebSocket()
+                  setCurrentMatchId(null)
+                  setStreamingLogs([])
+                  clearEvents()
+                  useAppStore.getState().clearGenerationResult()
                 }}
               >
                 Generate Another Match
+              </Button>
+              {allEvents.length > 0 && (
+                <Button
+                  onClick={() => setActiveTab("logs")}
+                  className="flex items-center gap-2"
+                >
+                  <Monitor className="size-4" />
+                  View Live Logs
+                </Button>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="logs" className="space-y-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-4">
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <Monitor className="size-6" />
+                  Live Match Logs
+                </h2>
+                <div className="flex items-center gap-2">
+                  <Badge variant={wsConnected ? "default" : "secondary"}>
+                    {wsConnected ? "🔴 Live" : "⚫ Offline"}
+                  </Badge>
+                  {currentMatchId && (
+                    <Badge variant="outline">
+                      ID: {currentMatchId}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                {wsConnected && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={isPaused ? resumeStream : pauseStream}
+                  >
+                    {isPaused ? "Resume" : "Pause"}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    clearEvents()
+                    setStreamingLogs([])
+                  }}
+                >
+                  Clear
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadLogs}
+                  disabled={allEvents.length === 0}
+                >
+                  Download
+                </Button>
+              </div>
+            </div>
+
+            <LogViewer
+              events={allEvents}
+              isStreaming={wsConnected && !isPaused}
+              onPause={pauseStream}
+              onResume={resumeStream}
+              onStop={disconnectWebSocket}
+              autoScroll={!isPaused}
+              showControls={true}
+              fullscreen={isLogViewerFullscreen}
+              onToggleFullscreen={handleToggleLogViewerFullscreen}
+              className="min-h-[500px]"
+            />
+
+            {allEvents.length === 0 && (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <Monitor className="size-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No Events Yet</h3>
+                  <p className="text-muted-foreground mb-4">
+                    {wsConnected 
+                      ? "Waiting for match events to stream..." 
+                      : "Connect to a match to see live logs"}
+                  </p>
+                  {!wsConnected && currentMatchId && (
+                    <Button onClick={connectWebSocket}>
+                      Connect to Match
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            <div className="flex justify-start">
+              <Button
+                variant="outline"
+                onClick={() => setActiveTab("results")}
+              >
+                Back to Results
               </Button>
             </div>
           </TabsContent>
