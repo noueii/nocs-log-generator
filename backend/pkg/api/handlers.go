@@ -7,19 +7,27 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/noueii/nocs-log-generator/backend/pkg/generator"
 	"github.com/noueii/nocs-log-generator/backend/pkg/models"
+	"github.com/noueii/nocs-log-generator/backend/pkg/websocket"
 )
 
 // Handler contains dependencies for API handlers
 type Handler struct {
-	// TODO: Add dependencies like generator, parser, etc.
-	// generator *generator.Generator
-	// parser    *parser.Parser
+	generator *generator.MatchGenerator
+	wsManager *websocket.Manager
 }
 
 // NewHandler creates a new API handler instance
 func NewHandler() *Handler {
-	return &Handler{}
+	return &Handler{
+		generator: generator.NewMatchGenerator(),
+	}
+}
+
+// SetWebSocketManager sets the WebSocket manager for the handler
+func (h *Handler) SetWebSocketManager(wsManager *websocket.Manager) {
+	h.wsManager = wsManager
 }
 
 // RegisterRoutes sets up API routes
@@ -69,40 +77,56 @@ func (h *Handler) GenerateMatch(c *gin.Context) {
 	// Sanitize team data
 	req.Teams = SanitizeTeamData(req.Teams)
 	
-	// Create match configuration from request
-	config := models.DefaultMatchConfig()
-	config.Format = req.Format
-	config.Map = req.Map
-	
-	// Apply options if provided
-	if req.Options.TickRate > 0 {
-		config.TickRate = req.Options.TickRate
+	// Broadcast generation start event if WebSocket is available
+	if h.wsManager != nil {
+		startEvent := websocket.GenerationStartEvent{
+			MatchID:   "", // Will be set after match creation
+			Teams:     []string{req.Teams[0].Name, req.Teams[1].Name},
+			Map:       req.Map,
+			Format:    req.Format,
+			MaxRounds: getMaxRoundsForFormat(req.Format),
+			StartedAt: time.Now().UTC(),
+		}
+		// We'll broadcast this after we have the match ID
+		_ = startEvent
 	}
-	if req.Options.Seed > 0 {
-		config.Seed = req.Options.Seed
+
+	// Generate the match using the real generator
+	match, err := h.generator.GenerateWithStreaming(&req, h.wsManager)
+	if err != nil {
+		log.Printf("Match generation failed: %v", err)
+		
+		// Broadcast error if WebSocket is available
+		if h.wsManager != nil && match != nil {
+			h.wsManager.BroadcastMatchError(match.ID, "Match generation failed: "+err.Error())
+		}
+		
+		c.JSON(http.StatusInternalServerError, GenerateResponseError("Match generation failed: "+err.Error()))
+		return
 	}
-	if req.Options.MaxRounds > 0 {
-		config.MaxRounds = req.Options.MaxRounds
+	
+	log.Printf("Successfully generated match %s: %s vs %s on %s (%d rounds, %d events)", 
+		match.ID, match.Teams[0].Name, match.Teams[1].Name, match.Map, 
+		len(match.Rounds), match.TotalEvents)
+	
+	// Broadcast completion event if WebSocket is available
+	if h.wsManager != nil {
+		completionEvent := websocket.GenerationCompleteEvent{
+			MatchID:     match.ID,
+			TotalRounds: len(match.Rounds),
+			TotalEvents: match.TotalEvents,
+			Duration:    match.Duration,
+			CompletedAt: time.Now().UTC(),
+			Success:     true,
+		}
+		h.wsManager.BroadcastMatchEvent(match.ID, websocket.EventTypeGenerationEnd, completionEvent)
 	}
-	config.Overtime = req.Options.Overtime
-	
-	// Create match with mock data
-	match := models.NewMatch(config, req.Teams)
-	match.Status = "generating"
-	match.StartTime = time.Now()
-	
-	// TODO: Replace with actual generation logic
-	// For now, return mock match data
-	mockMatch := h.createMockMatch(match)
-	
-	log.Printf("Generated match %s: %s vs %s on %s", 
-		mockMatch.ID, mockMatch.Teams[0].Name, mockMatch.Teams[1].Name, mockMatch.Map)
 	
 	// Return successful response
 	response := models.GenerateResponse{
-		MatchID: mockMatch.ID,
-		Status:  mockMatch.Status,
-		LogURL:  fmt.Sprintf("/api/v1/matches/%s/log", mockMatch.ID),
+		MatchID: match.ID,
+		Status:  match.Status,
+		LogURL:  fmt.Sprintf("/api/v1/matches/%s/log", match.ID),
 	}
 	
 	c.JSON(http.StatusOK, response)
@@ -258,6 +282,18 @@ func (h *Handler) getMockRoundWinner(round int, teams []models.Team) string {
 		return teams[1].Name
 	}
 	return teams[0].Name
+}
+
+// getMaxRoundsForFormat returns the maximum rounds for a given format
+func getMaxRoundsForFormat(format string) int {
+	switch format {
+	case "mr12":
+		return 24
+	case "mr15":
+		return 30
+	default:
+		return 24
+	}
 }
 
 func (h *Handler) getMockRoundEndReason(round int) string {

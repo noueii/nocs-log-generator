@@ -305,4 +305,95 @@ export const useMatchStatistics = () => {
 // Import React for the hook
 import React from 'react';
 
+/**
+ * Hook for match history (convenience hook)
+ */
+export const useMatchHistory = () => {
+  return useMatchStore(state => ({
+    matches: state.matches,
+    isLoading: state.isLoading,
+    error: state.error,
+    addMatch: state.addMatch,
+    removeMatch: state.removeMatch,
+    clearHistory: state.clearHistory,
+    searchMatches: state.searchMatches,
+  }));
+};
+
+/**
+ * Hook for match filters (for filter UI)
+ */
+export const useMatchFilters = () => {
+  const [filters, setFilters] = React.useState<IMatchFilters>({
+    status: 'all',
+    format: 'all',
+    map: 'all',
+    dateRange: 'all',
+    searchQuery: '',
+  });
+
+  return {
+    filters,
+    setFilters,
+    resetFilters: () => setFilters({
+      status: 'all',
+      format: 'all',
+      map: 'all',
+      dateRange: 'all',
+      searchQuery: '',
+    }),
+  };
+};
+
+/**
+ * Hook for match selection (for bulk operations)
+ */
+export const useMatchSelection = () => {
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+
+  return {
+    selectedIds,
+    selectMatch: (id: string) => {
+      setSelectedIds(prev => new Set([...prev, id]));
+    },
+    deselectMatch: (id: string) => {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    },
+    toggleMatch: (id: string) => {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+        return next;
+      });
+    },
+    selectAll: (ids: string[]) => {
+      setSelectedIds(new Set(ids));
+    },
+    clearSelection: () => {
+      setSelectedIds(new Set());
+    },
+    isSelected: (id: string) => selectedIds.has(id),
+  };
+};
+
+// Type exports
+export type IMatchHistoryItem = IMatch;
+export type IMatchFilters = {
+  status: 'all' | 'completed' | 'in_progress' | 'error';
+  format: 'all' | 'mr12' | 'mr15';
+  map: string;
+  dateRange: 'all' | 'today' | 'week' | 'month';
+  searchQuery: string;
+};
+export type TMatchSortBy = 'date' | 'map' | 'format' | 'status' | 'duration';
+export type TMatchSortOrder = 'asc' | 'desc';
+
 export default useMatchStore;

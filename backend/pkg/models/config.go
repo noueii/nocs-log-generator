@@ -46,6 +46,8 @@ type MatchConfig struct {
 	OutputVerbosity     string `json:"output_verbosity"` // "minimal", "standard", "verbose"
 	IncludePositions    bool   `json:"include_positions"`
 	IncludeWeaponFire   bool   `json:"include_weapon_fire"`
+	VerboseLogging      bool   `json:"verbose_logging"`
+	DetailedEvents      bool   `json:"detailed_events"`
 }
 
 // SimulationConfig represents configuration for match simulation
@@ -188,6 +190,8 @@ func DefaultMatchConfig() MatchConfig {
 		OutputVerbosity:     "standard",
 		IncludePositions:    false,
 		IncludeWeaponFire:   false,
+		VerboseLogging:      false,
+		DetailedEvents:      false,
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/noueii/nocs-log-generator/backend/pkg/websocket"
 )
 
 // SetupRouter creates and configures the main router
@@ -26,13 +27,20 @@ func SetupRouter() *gin.Engine {
 	router.GET("/health", HealthCheckHandler)
 	router.GET("/ready", ReadinessHandler)
 	
-	// Create API handler
+	// Create WebSocket manager
+	wsManager := websocket.NewManager()
+	
+	// Create API handler with WebSocket manager
 	handler := NewHandler()
+	handler.SetWebSocketManager(wsManager)
 	
 	// API v1 routes
 	v1 := router.Group("/api/v1")
 	{
 		handler.RegisterRoutes(v1)
+		
+		// WebSocket endpoint
+		v1.GET("/ws", wsManager.HandleWebSocketUpgrade)
 	}
 	
 	return router
