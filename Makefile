@@ -67,23 +67,33 @@ logs-backend: ## View backend logs only
 logs-frontend: ## View frontend logs only
 	docker compose logs -f frontend
 
-clean: ## Remove containers, volumes, and images
-	@echo "$(YELLOW)Cleaning up Docker resources...$(RESET)"
+clean: ## Remove ONLY this project's containers and volumes
+	@echo "$(YELLOW)Cleaning up CS2 Log Generator Docker resources...$(RESET)"
 	docker compose down -v --remove-orphans
-	docker system prune -f
-	@echo "$(GREEN)Cleanup complete$(RESET)"
+	@echo "$(GREEN)CS2 Log Generator cleanup complete$(RESET)"
 
-clean-all: ## Remove everything including unused images and build cache
-	@echo "$(RED)Warning: This will remove all unused Docker resources!$(RESET)"
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		echo; \
-		docker compose down -v --remove-orphans; \
-		docker system prune -af --volumes; \
-		echo "$(GREEN)Deep cleanup complete$(RESET)"; \
+clean-images: ## Remove ONLY this project's Docker images
+	@echo "$(YELLOW)Removing CS2 Log Generator images...$(RESET)"
+	docker compose down
+	docker rmi nocs-log-generator-backend nocs-log-generator-frontend 2>/dev/null || true
+	@echo "$(GREEN)CS2 Log Generator images removed$(RESET)"
+
+clean-all: ## Remove ONLY this project's containers, volumes, and images
+	@echo "$(YELLOW)Removing all CS2 Log Generator resources...$(RESET)"
+	docker compose down -v --remove-orphans
+	docker rmi nocs-log-generator-backend nocs-log-generator-frontend 2>/dev/null || true
+	@echo "$(GREEN)CS2 Log Generator full cleanup complete$(RESET)"
+
+# DANGEROUS: System-wide cleanup commands (hidden from help)
+.PHONY: system-prune-careful
+system-prune-careful: ## WARNING: Removes ALL stopped containers system-wide
+	@echo "$(RED)⚠️  WARNING: This will remove ALL stopped containers from ALL projects!$(RESET)"
+	@echo "$(RED)This is NOT project-specific and will affect other projects!$(RESET)"
+	@read -p "Are you ABSOLUTELY sure? Type 'yes' to confirm: " confirm; \
+	if [ "$$confirm" = "yes" ]; then \
+		docker system prune -f; \
 	else \
-		echo; \
-		echo "Cancelled"; \
+		echo "Cancelled - no changes made"; \
 	fi
 
 test: ## Run tests in containers

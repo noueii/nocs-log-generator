@@ -4,7 +4,7 @@ tmp_dir = "tmp"
 
 [build]
   # Commands to build the application
-  cmd = "go build -o ./tmp/main ./cmd/server"
+  cmd = "go build -mod=mod -o ./tmp/main ./cmd/server"
   # Binary output location
   bin = "tmp/main"
   # Full path to the binary (used for killing)

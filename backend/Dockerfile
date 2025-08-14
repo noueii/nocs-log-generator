@@ -1,13 +1,13 @@
 # Multi-stage Dockerfile for Go backend
 # Stage 1: Development stage with hot reload
-FROM golang:1.21-alpine AS dev
+FROM golang:1.24-alpine AS dev
 LABEL stage=development
 
 # Install necessary tools
 RUN apk add --no-cache git make curl
 
 # Install air for hot reload in development
-RUN go install github.com/cosmtrek/air@latest
+RUN go install github.com/air-verse/air@latest
 
 # Set working directory
 WORKDIR /app
@@ -32,7 +32,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 CMD ["air", "-c", ".air.toml"]
 
 # Stage 2: Builder stage for production build
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 LABEL stage=build
 
 # Install build dependencies
