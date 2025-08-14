@@ -1,0 +1,93 @@
+services:
+  # Backend service (Go/Gin)
+  backend:
+    build:
+      context: ./backend
+      target: dev
+      dockerfile: Dockerfile
+    container_name: cs2-log-generator-backend
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount source code for hot reload
+      - ./backend:/app
+      # Exclude vendor and tmp directories from host mount
+      - /app/vendor
+      - /app/tmp
+    environment:
+      - PORT=8080
+      - ENV=development
+      - LOG_LEVEL=debug
+      - CORS_ORIGIN=http://localhost:5173
+      - GIN_MODE=debug
+    networks:
+      - cs2-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend service (React/Vite)
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+      dockerfile: Dockerfile
+    container_name: cs2-log-generator-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      # Mount source code for hot reload
+      - ./frontend:/app
+      # Exclude node_modules from host mount
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8080
+      - VITE_WS_URL=ws://localhost:8080
+      - VITE_ENV=development
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - cs2-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis service (optional, for future caching needs)
+  redis:
+    image: redis:7-alpine
+    container_name: cs2-log-generator-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - cs2-network
+    restart: unless-stopped
+    profiles:
+      - with-cache
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# Networks
+networks:
+  cs2-network:
+    driver: bridge
+    name: cs2-log-generator-network
+
+# Volumes
+volumes:
+  redis_data:
+    name: cs2-log-generator-redis-data

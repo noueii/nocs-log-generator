@@ -1,0 +1,32 @@
+services:
+  # Backend service (production build)
+  backend:
+    build:
+      context: ./backend
+      target: production
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes: []  # No volume mounts in production
+    environment:
+      - PORT=8080
+      - ENV=production
+      - LOG_LEVEL=info
+      - CORS_ORIGIN=http://localhost
+      - GIN_MODE=release
+
+  # Frontend service (production build with nginx)
+  frontend:
+    build:
+      context: ./frontend
+      target: production
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    volumes: []  # No volume mounts in production
+    environment: []  # Build-time env vars only
+
+  # Redis service (production settings)
+  redis:
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    profiles: []  # Enable by default in production

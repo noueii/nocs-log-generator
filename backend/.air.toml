@@ -1,0 +1,50 @@
+# Air configuration for Go hot reload
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Commands to build the application
+  cmd = "go build -o ./tmp/main ./cmd/server"
+  # Binary output location
+  bin = "tmp/main"
+  # Full path to the binary (used for killing)
+  full_bin = "./tmp/main"
+  # Watch these extensions
+  include_ext = ["go", "tpl", "tmpl", "html", "yml", "yaml", "json"]
+  # Exclude these extensions
+  exclude_ext = ["log", "txt"]
+  # Watch these directories
+  include_dir = []
+  # Exclude these directories
+  exclude_dir = ["tmp", "vendor", "node_modules", ".git", "dist"]
+  # Exclude files that match these patterns
+  exclude_file = []
+  # If an excluded directory's parent is not an excluded directory, it's still included
+  exclude_unchanged = true
+  # Follow symlinks
+  follow_symlink = true
+  # Log file location
+  log = "air_errors.log"
+  # Delay between restarts (ms)
+  delay = 1000
+  # Stop running old binary when build errors occur
+  stop_on_root = true
+  # Send kill signal to child process
+  send_interrupt = false
+  # Send kill signal after a timeout
+  kill_delay = 500
+
+[log]
+  # Show log time
+  time = false
+
+[color]
+  # Colorize output
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+
+[misc]
+  # Delete tmp directory on exit
+  clean_on_exit = true
